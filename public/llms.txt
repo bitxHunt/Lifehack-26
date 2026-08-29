@@ -1,0 +1,23 @@
+# Shopwise Fashion Edit
+
+Shopwise is a fictional ecommerce demo containing five complete Amazon Fashion
+catalog records. All public pages are accessible without authentication.
+
+## Entry points
+
+- Storefront: /shop
+- Editable browsing journey: /shop/journey
+- Machine-readable catalog: /shop/catalog.json
+- Sitemap: /sitemap.xml
+
+## Product routes
+
+Each product uses an Amazon-style route:
+
+    /shop/dp/{parent_asin}
+
+Product pages include semantic headings, product details, prices, ratings,
+features, image alt text, and Product JSON-LD. The journey editor stores its
+ordered ASIN sequence in the shareable `path` query parameter.
+
+This is a demo. Cart and checkout actions do not process real orders.
