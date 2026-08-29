@@ -1,7 +1,4 @@
-import "server-only";
-
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import productData from "@/data/amazon_fashion_5_complete_records.json";
 
 export type ProductImage = {
   thumb: string | null;
@@ -27,28 +24,7 @@ export type ShopProduct = {
   bought_together: string[] | null;
 };
 
-const dataFile = join(
-  process.cwd(),
-  "data",
-  "amazon_fashion_5_complete_records.jsonl",
-);
-
-function loadProducts(): ShopProduct[] {
-  return readFileSync(dataFile, "utf8")
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line, index) => {
-      try {
-        return JSON.parse(line) as ShopProduct;
-      } catch (error) {
-        throw new Error(
-          `Invalid product JSON at ${dataFile}:${index + 1}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    });
-}
-
-export const shopProducts = loadProducts();
+export const shopProducts = productData as ShopProduct[];
 
 export function getProduct(asin: string) {
   return shopProducts.find((product) => product.parent_asin === asin);
