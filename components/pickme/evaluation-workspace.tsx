@@ -42,6 +42,22 @@ type ProductOption = {
 };
 
 type View = "adversarial" | "discovery" | "fixes";
+type StressCategory = PickMeEvaluation["adversarialTests"][number]["category"];
+type StressFilter = "all" | StressCategory;
+
+const stressCategories: Array<{ key: StressFilter; label: string }> = [
+  { key: "all", label: "All 30" },
+  { key: "plain_simple", label: "Simple chat" },
+  { key: "singlish", label: "Singlish" },
+  { key: "shorthand_typos", label: "Typos & shorthand" },
+  { key: "constraint_heavy", label: "Constraints" },
+  { key: "ambiguous", label: "Ambiguous" },
+  { key: "context_shift", label: "Context shifts" },
+];
+
+const stressCategoryLabels = Object.fromEntries(
+  stressCategories.filter((category) => category.key !== "all").map((category) => [category.key, category.label]),
+) as Record<StressCategory, string>;
 
 const metricAccents = {
   completeness: "bg-blue-500",
@@ -78,15 +94,17 @@ function DraftEditor({
   draft,
   onChange,
   onReset,
-  onRerun,
-  running,
+  onSaveAndRerun,
+  busy,
+  saveStatus,
 }: {
   product: ProductOption;
   draft: ProductDraft;
   onChange: (draft: ProductDraft) => void;
   onReset: () => void;
-  onRerun: () => void;
-  running: boolean;
+  onSaveAndRerun: () => void;
+  busy: boolean;
+  saveStatus: string | null;
 }) {
   const update = <K extends keyof ProductDraft>(key: K, value: ProductDraft[K]) =>
     onChange({ ...draft, [key]: value });
@@ -103,7 +121,7 @@ function DraftEditor({
               Improve the product evidence
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              Draft changes stay on this device until you rerun the evaluation.
+              Suggestions stay as a draft until you save. Saving updates the product page data, then runs all 30 tests again.
             </p>
           </div>
           <button
@@ -187,19 +205,22 @@ function DraftEditor({
           </label>
         </div>
 
-        <button
-          type="button"
-          onClick={onRerun}
-          disabled={running}
-          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-        >
-          {running ? (
-            <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <RefreshCw className="size-4" aria-hidden="true" />
-          )}
-          Rerun with edited metadata
-        </button>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={onSaveAndRerun}
+            disabled={busy}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+          >
+            {busy ? (
+              <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="size-4" aria-hidden="true" />
+            )}
+            {busy ? "Saving and testing…" : "Save to product & run 30 tests"}
+          </button>
+          {saveStatus ? <span className="text-sm font-semibold text-emerald-700">{saveStatus}</span> : null}
+        </div>
       </div>
 
       <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -247,9 +268,15 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
   const [drafts, setDrafts] = useState<Record<string, ProductDraft>>(() =>
     Object.fromEntries(products.map((product) => [product.asin, product.draft])),
   );
+  const [savedDrafts, setSavedDrafts] = useState<Record<string, ProductDraft>>(() =>
+    Object.fromEntries(products.map((product) => [product.asin, product.draft])),
+  );
   const [result, setResult] = useState<PickMeEvaluation | null>(null);
   const [activeView, setActiveView] = useState<View>("adversarial");
+  const [stressFilter, setStressFilter] = useState<StressFilter>("all");
   const [running, setRunning] = useState(false);
+  const [savingMetadata, setSavingMetadata] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runNumber, setRunNumber] = useState(0);
   const [storageReady, setStorageReady] = useState(false);
@@ -297,6 +324,17 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
     () => result?.targetRank,
     [result],
   );
+  const displayedStressTests = useMemo(
+    () => result?.adversarialTests.filter((test) => stressFilter === "all" || test.category === stressFilter) ?? [],
+    [result, stressFilter],
+  );
+  const stressOutcomes = useMemo(
+    () => result?.adversarialTests.reduce(
+      (totals, test) => ({ ...totals, [test.verdict]: totals[test.verdict] + 1 }),
+      { pass: 0, watch: 0, fail: 0 },
+    ) ?? { pass: 0, watch: 0, fail: 0 },
+    [result],
+  );
 
   function choosePreset(presetId: string) {
     const preset = intentPresets.find((candidate) => candidate.id === presetId);
@@ -306,6 +344,7 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
     setProductUrl(product.url);
     setResult(null);
     setError(null);
+    setSaveStatus(null);
   }
 
   async function runEvaluation() {
@@ -337,6 +376,7 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
       setResult(payload);
       setRunNumber((current) => current + 1);
       setActiveView("adversarial");
+      setStressFilter("all");
       window.setTimeout(
         () => document.getElementById("evaluation-results")?.scrollIntoView({ behavior: "smooth" }),
         50,
@@ -350,6 +390,29 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
 
   function updateDraft(draft: ProductDraft) {
     setDrafts((current) => ({ ...current, [draft.parent_asin]: draft }));
+    setSaveStatus(null);
+  }
+
+  async function saveMetadataAndRerun() {
+    setSavingMetadata(true);
+    setError(null);
+    setSaveStatus(null);
+    try {
+      const response = await fetch(`/api/products/${selectedDraft.parent_asin}/metadata`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(selectedDraft),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "The product metadata could not be saved.");
+      setSavedDrafts((current) => ({ ...current, [selectedDraft.parent_asin]: selectedDraft }));
+      setSaveStatus("Product page updated");
+      await runEvaluation();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The product metadata could not be saved.");
+    } finally {
+      setSavingMetadata(false);
+    }
   }
 
   function applyFix(fix: MetadataFix) {
@@ -556,7 +619,7 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">This run will</p>
               <ol className="mt-5 space-y-5">
                 {[
-                  [FlaskConical, "Adversarial testing", "Stress the intent with four query variations."],
+                  [FlaskConical, "30-message stress test", "Test simple chat, Singlish, shorthand, constraints, ambiguity, and context shifts."],
                   [BarChart3, "Full-catalog ranking", "Search all Amazon Fashion metadata, then judge the strongest candidates."],
                   [ClipboardCheck, "Discovery plan", "Expose the agent’s search and evidence path."],
                   [WandSparkles, "Metadata fixes", "Turn weak evidence into rerunnable edits."],
@@ -715,29 +778,61 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
                         ))}
                       </div>
                     </article>
-                    {result.adversarialTests.map((test, index) => (
-                      <article key={`${test.label}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Stress test {index + 1}</p>
-                            <h3 className="mt-1 text-lg font-bold text-slate-950">{test.label}</h3>
-                          </div>
-                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${test.verdict === "pass" ? "bg-emerald-50 text-emerald-700" : test.verdict === "watch" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>
-                            Target #{test.targetRank} · {test.verdict}
-                          </span>
+                    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">30-message coverage</p>
+                          <h3 className="mt-1 text-lg font-bold text-slate-950">How real people might ask ChatGPT</h3>
+                          <p className="mt-1 text-sm text-slate-500">Six writing styles, five messages each. Open a message to see the ranking evidence.</p>
                         </div>
-                        <blockquote className="mt-4 rounded-xl border-l-4 border-blue-500 bg-blue-50/70 px-4 py-3 text-sm leading-6 text-slate-700">“{test.prompt}”</blockquote>
-                        <p className="mt-3 text-xs text-slate-500"><span className="font-bold text-slate-700">What this stresses:</span> {test.stress}</p>
-                        <div className="mt-5 grid gap-2 sm:grid-cols-5">
-                          {test.topProducts.map((entry) => (
-                            <div key={entry.asin} className={`rounded-xl border p-3 ${entry.asin === result.targetAsin ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-slate-50"}`}>
-                              <span className="text-xs font-black text-slate-400">#{entry.rank}</span>
-                              <p className="mt-1 line-clamp-2 text-xs font-bold leading-4 text-slate-800">{entry.title}</p>
+                        <div className="flex gap-2 text-xs font-bold">
+                          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">{stressOutcomes.pass} pass</span>
+                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{stressOutcomes.watch} watch</span>
+                          <span className="rounded-full bg-rose-50 px-2.5 py-1 text-rose-700">{stressOutcomes.fail} fail</span>
+                        </div>
+                      </div>
+                      <div className="mt-5 flex flex-wrap gap-2" role="group" aria-label="Filter stress tests">
+                        {stressCategories.map((category) => (
+                          <button
+                            key={category.key}
+                            type="button"
+                            onClick={() => setStressFilter(category.key)}
+                            className={`rounded-full border px-3 py-2 text-xs font-bold transition ${stressFilter === category.key ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 text-slate-600 hover:border-slate-400"}`}
+                          >
+                            {category.label}
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {displayedStressTests.map((test) => (
+                        <details key={test.id} className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm open:border-blue-200">
+                          <summary className="cursor-pointer list-none">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{test.id}</span>
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">{stressCategoryLabels[test.category]}</span>
+                                </div>
+                                <p className="mt-2 text-sm font-bold leading-6 text-slate-900">“{test.prompt}”</p>
+                              </div>
+                              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${test.verdict === "pass" ? "bg-emerald-50 text-emerald-700" : test.verdict === "watch" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>
+                                #{test.targetRank} {test.verdict}
+                              </span>
                             </div>
-                          ))}
-                        </div>
-                      </article>
-                    ))}
+                          </summary>
+                          <div className="mt-4 border-t border-slate-100 pt-4 text-xs leading-5 text-slate-600">
+                            <p><span className="font-bold text-slate-800">What changed:</span> {test.stress}</p>
+                            <p className="mt-2"><span className="font-bold text-slate-800">Why it ranked this way:</span> {test.reason}</p>
+                            <div className={`mt-3 rounded-lg p-3 ${test.topPickAsin === result.targetAsin ? "bg-blue-50 text-blue-800" : "bg-slate-50 text-slate-700"}`}>
+                              <span className="block text-[10px] font-black uppercase tracking-[0.14em] opacity-60">AI top pick</span>
+                              <span className="mt-1 block font-bold">{test.topPickTitle}</span>
+                            </div>
+                          </div>
+                        </details>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
 
@@ -774,7 +869,7 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
                         <p className="font-bold text-blue-950">Turn recommendations into a new test</p>
                         <p className="mt-1 text-sm text-blue-700">Apply grounded rewrites, review the draft, then rerun the full loop.</p>
                       </div>
-                      <button type="button" onClick={applyAllFixes} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">Apply all fixes</button>
+                      <button type="button" onClick={applyAllFixes} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">Add all to editor</button>
                     </div>
                     {result.fixes.map((fix, index) => (
                       <article key={`${fix.field}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -789,7 +884,7 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
                           {fix.suggestedValue}
                         </div>
                         <button type="button" onClick={() => applyFix(fix)} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700">
-                          <PencilLine className="size-4" aria-hidden="true" /> Apply to draft
+                          <PencilLine className="size-4" aria-hidden="true" /> Add to editor
                         </button>
                       </article>
                     ))}
@@ -833,9 +928,10 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
                 product={selectedProduct}
                 draft={selectedDraft}
                 onChange={updateDraft}
-                onReset={() => updateDraft(selectedProduct.draft)}
-                onRerun={runEvaluation}
-                running={running}
+                onReset={() => updateDraft(savedDrafts[selectedProduct.asin] ?? selectedProduct.draft)}
+                onSaveAndRerun={saveMetadataAndRerun}
+                busy={running || savingMetadata}
+                saveStatus={saveStatus}
               />
             </div>
           </section>

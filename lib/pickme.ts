@@ -41,12 +41,22 @@ export type EvaluationMetric = {
 };
 
 export type AdversarialTest = {
+  id: string;
+  category:
+    | "plain_simple"
+    | "singlish"
+    | "shorthand_typos"
+    | "constraint_heavy"
+    | "ambiguous"
+    | "context_shift";
   label: string;
   prompt: string;
   stress: string;
   targetRank: number;
   verdict: "pass" | "watch" | "fail";
-  topProducts: RankingEntry[];
+  topPickAsin: string;
+  topPickTitle: string;
+  reason: string;
 };
 
 export type DiscoveryStep = {

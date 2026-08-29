@@ -35,13 +35,23 @@ const evaluationSchema = z.object({
     decisiveSignals: z.array(z.string()).min(1).max(4),
   })).min(3).max(5),
   adversarialTests: z.array(z.object({
+    id: z.string(),
+    category: z.enum([
+      "plain_simple",
+      "singlish",
+      "shorthand_typos",
+      "constraint_heavy",
+      "ambiguous",
+      "context_shift",
+    ]),
     label: z.string(),
     prompt: z.string(),
     stress: z.string(),
     targetRank: z.number().int().min(1).max(25),
     verdict: z.enum(["pass", "watch", "fail"]),
-    topProducts: z.array(rankingSchema).length(5),
-  })).length(4),
+    topPickAsin: z.string(),
+    reason: z.string(),
+  })).length(30),
   discoveryPlan: z.array(z.object({
     step: z.number().int().min(1).max(6),
     title: z.string(),
@@ -237,7 +247,14 @@ Evaluation rules:
 - The retrieval stage has already searched the full catalog. Rerank only the supplied evidence candidates and never invent products, ASINs, prices, proof points, or claims.
 - Return the five best candidates in leaderboard. Also report the target's rank within the entire supplied candidate set, even when it is outside the top five.
 - Explain how the strongest non-target products affect the target: which evidence pushes it down, is neutral, or gives the target an advantage.
-- Create four adversarial variations: paraphrase drift, constraint-first, noisy conversational wording, and omission/ambiguity. Return each variation's top five plus the target's rank in the candidate set.
+- Create exactly 30 distinct buyer messages, five in each category below. Judge every message against the same supplied candidate evidence set.
+  1. plain_simple: ordinary ChatGPT-style requests, 3-14 words, direct and natural.
+  2. singlish: natural Singapore English with varied local phrasing such as "can or not", "got", "lah", "leh", or "for work one". Keep it respectful and avoid exaggerated caricature.
+  3. shorthand_typos: rushed mobile messages, abbreviations, missing punctuation, and realistic spelling mistakes.
+  4. constraint_heavy: budget, use case, comfort, style, size, or occasion constraints in different orders.
+  5. ambiguous: underspecified messages, omitted category words, vague references, and short follow-ups.
+  6. context_shift: different buyer roles, occasions, or priorities that remain plausible for the original intent.
+- Give every test a stable id such as plain-01 or singlish-03, its category, the top product ASIN, the target's rank in the candidate set, and a short evidence reason.
 - Target rank 1 is pass, rank 2 is watch, and rank 3 or lower is fail.
 - The discovery plan must truthfully show: intent parsing, full-corpus retrieval, shortlist construction, product-page evidence comparison, and final reranking. Track target rank as evidence is applied.
 - Score four metrics from 0-25: Product-Data Completeness, Query and Intent Coverage, Claim Specificity and Verifiability, and AI Visibility.
@@ -250,7 +267,7 @@ Evaluation rules:
       model,
       store: false,
       reasoning: { effort: "low" },
-      max_output_tokens: 11_000,
+      max_output_tokens: 14_000,
       input: [
         { role: "system", content: systemPrompt },
         {
@@ -319,13 +336,17 @@ Evaluation rules:
       leaderboard,
       competitorEffects,
       adversarialTests: raw.adversarialTests.map((test) => {
-        const topProducts = normalizeRanking(test.topProducts, candidates);
-        const adversarialTargetRank = resolvedTargetRank(topProducts, asin, test.targetRank, candidates.length);
+        const topPick = candidateByAsin.get(test.topPickAsin) ?? candidates[0];
+        const targetIsTopPick = topPick.asin === asin;
+        const adversarialTargetRank = targetIsTopPick
+          ? 1
+          : Math.max(2, Math.min(candidates.length, test.targetRank));
         return {
           ...test,
           targetRank: adversarialTargetRank,
           verdict: adversarialTargetRank === 1 ? "pass" as const : adversarialTargetRank === 2 ? "watch" as const : "fail" as const,
-          topProducts,
+          topPickAsin: topPick.asin,
+          topPickTitle: topPick.title,
         };
       }),
       discoveryPlan: raw.discoveryPlan.map((step, index) => {
