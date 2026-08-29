@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "data:products": "node scripts/fetch-amazon-metadata.mjs",
+    "data:index-fashion": "node scripts/build-fashion-index.mjs",
     "data:shop": "node scripts/build-shop-data.mjs",
     "build:clean-secrets": "node scripts/clean-build-secrets.mjs",
     "dev:vinext": "vinext dev --port 3001",

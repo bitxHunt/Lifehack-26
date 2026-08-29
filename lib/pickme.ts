@@ -16,6 +16,17 @@ export type RankingEntry = {
   title: string;
   fitScore: number;
   reason: string;
+  productUrl: string;
+};
+
+export type CompetitorEffect = {
+  asin: string;
+  title: string;
+  rank: number;
+  effect: "pushes_down" | "neutral" | "target_advantage";
+  impact: string;
+  decisiveSignals: string[];
+  productUrl: string;
 };
 
 export type EvaluationMetric = {
@@ -59,10 +70,16 @@ export type PickMeEvaluation = {
   model: string;
   targetAsin: string;
   targetTitle: string;
+  targetRank: number;
+  targetReason: string;
   overallScore: number;
   summary: string;
+  comparisonPoolSize: number;
+  retrievedCandidateCount: number;
+  searchTerms: string[];
   metrics: EvaluationMetric[];
   leaderboard: RankingEntry[];
+  competitorEffects: CompetitorEffect[];
   adversarialTests: AdversarialTest[];
   discoveryPlan: DiscoveryStep[];
   fixes: MetadataFix[];

@@ -45,6 +45,7 @@ next-env.d.ts
 /data/.cache/
 /data/products/*.jsonl.gz
 /data/products/manifest.json
+/data/index/
 /dist/
 .vinext/
 .wrangler/
