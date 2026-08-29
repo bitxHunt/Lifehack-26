@@ -92,6 +92,31 @@ Terminal output looks like this:
                add: Tuned for half marathon race pace and long runs up to 21.1km.
 ```
 
+## Deploying to Render
+
+The repo already contains `render.yaml`, so Render configures itself.
+
+1. Push this folder to a GitHub repo.
+2. Render dashboard → **New** → **Blueprint** → pick the repo → **Apply**.
+3. You get `https://agentshelf.onrender.com` (or similar) in a couple of minutes.
+
+If you'd rather set it up by hand (**New → Web Service**) instead of using the blueprint:
+
+| field | value |
+| --- | --- |
+| Runtime | Python 3 |
+| Build command | `echo no dependencies` |
+| Start command | `python run.py --host 0.0.0.0` |
+| Plan | Free |
+
+`--host 0.0.0.0` matters — the default is loopback only, and Render's health check
+would never reach it. The port comes from Render's `$PORT` automatically.
+
+> **Free tier warning for demo day:** Render's free plan sleeps a service after 15
+> minutes of no traffic, and the next visit takes ~50 seconds to wake up. Open the URL
+> a minute before you present, or you will be staring at a blank page on stage.
+> Keep `python3 run.py` working locally as a backup.
+
 ## How it is built
 
 ```
