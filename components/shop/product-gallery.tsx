@@ -56,6 +56,7 @@ export function ProductGallery({
           src={selectedSource}
           alt={`${productTitle}, ${selected.variant.toLowerCase()} view`}
           fill
+          loading="eager"
           priority
           sizes="(max-width: 768px) 80vw, 45vw"
           className="object-contain"
