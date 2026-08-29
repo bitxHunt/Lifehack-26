@@ -1,27 +1,19 @@
 {
-  "name": "agentshelf",
-  "version": "1.0.0",
+  "name": "pickme",
+  "version": "0.1.0",
   "private": true,
-  "description": "Simulate how AI shopping agents rank products, and what it costs a brand to stay silent.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "report": "tsx scripts/report.ts",
-    "typecheck": "tsc --noEmit",
-    "db:dev": "prisma dev --name agentshelf",
-    "db:migrate": "prisma migrate dev",
-    "db:generate": "prisma generate",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "lint": "eslint",
+    "data:products": "node scripts/fetch-amazon-metadata.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
-    "@prisma/adapter-pg": "^7.10.0",
-    "@prisma/client": "7.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.35.0",
+    "lucide-react": "^1.37.0",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -30,15 +22,13 @@
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
-    "@types/node": "^24.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "dotenv": "^17.4.2",
-    "postcss": "^8.5.26",
-    "prisma": "7.10.0",
-    "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.0",
-    "typescript": "^5.6.0"
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.3",
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }
