@@ -18,28 +18,28 @@ export const metadata: Metadata = {
       "https://shopwise-fashion-edit.z3e0.chatgpt.site",
   ),
   title: {
-    default: "Shopwise — Fashion demo store",
-    template: "%s | Shopwise",
+    default: "PickMe — AI Product Visibility Lab",
+    template: "%s | PickMe",
   },
   description:
-    "An AI-accessible demo fashion store built from five Amazon Fashion catalog records.",
+    "Stress-test ecommerce product visibility, inspect AI discovery paths, and improve product metadata.",
   openGraph: {
-    title: "Shopwise Fashion Edit",
-    description: "Five products. One agent-ready storefront.",
+    title: "PickMe — AI Product Visibility Lab",
+    description: "Test. Rank. Improve.",
     type: "website",
     images: [
       {
         url: "/og.png",
         width: 1729,
         height: 910,
-        alt: "Shopwise Fashion Edit",
+        alt: "PickMe — Test. Rank. Improve.",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Shopwise Fashion Edit",
-    description: "Five products. One agent-ready storefront.",
+    title: "PickMe — AI Product Visibility Lab",
+    description: "Test. Rank. Improve.",
     images: ["/og.png"],
   },
 };

@@ -8,7 +8,8 @@ const siteUrl =
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
-    { url: `${siteUrl}/shop`, priority: 1, changeFrequency: "weekly" },
+    { url: siteUrl, priority: 1, changeFrequency: "weekly" },
+    { url: `${siteUrl}/shop`, priority: 0.9, changeFrequency: "weekly" },
     { url: `${siteUrl}/shop/journey`, priority: 0.6, changeFrequency: "monthly" },
     ...shopProducts.map((product) => ({
       url: `${siteUrl}${getProductPath(product)}`,

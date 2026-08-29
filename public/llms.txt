@@ -1,10 +1,13 @@
-# Shopwise Fashion Edit
+# PickMe — AI Product Visibility Lab
 
-Shopwise is a fictional ecommerce demo containing five complete Amazon Fashion
-catalog records. All public pages are accessible without authentication.
+PickMe evaluates whether an ecommerce product is visible and well-ranked for a
+buyer intent. It uses a fictional Shopwise catalog containing five complete
+Amazon Fashion records.
 
 ## Entry points
 
+- Evaluation workspace: /
+- OpenAI evaluation endpoint: POST /api/evaluate
 - Storefront: /shop
 - Editable browsing journey: /shop/journey
 - Machine-readable catalog: /shop/catalog.json
@@ -19,5 +22,10 @@ Each product uses an Amazon-style route:
 Product pages include semantic headings, product details, prices, ratings,
 features, image alt text, and Product JSON-LD. The journey editor stores its
 ordered ASIN sequence in the shareable `path` query parameter.
+
+The evaluation endpoint accepts `productUrl`, `intent`, and an optional
+`productDraft`. It returns adversarial query tests, a five-product leaderboard,
+a discovery plan, four 25-point metrics, and grounded metadata fixes. The
+OpenAI API key remains server-side.
 
 This is a demo. Cart and checkout actions do not process real orders.

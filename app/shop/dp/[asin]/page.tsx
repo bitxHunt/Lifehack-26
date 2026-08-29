@@ -109,6 +109,12 @@ export default async function ProductPage({ params }: PageProps<"/shop/dp/[asin]
           <span>{product.store}</span>
           <span aria-hidden="true" className="px-2">›</span>
           <span>ASIN {product.parent_asin}</span>
+          <Link
+            href="/"
+            className="ml-3 inline-flex rounded-full bg-blue-50 px-3 py-1 font-bold text-blue-700 hover:bg-blue-100"
+          >
+            Test this product in PickMe
+          </Link>
         </nav>
 
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.9fr)_260px]">

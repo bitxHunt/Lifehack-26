@@ -24,7 +24,7 @@ export type ShopProduct = {
   bought_together: string[] | null;
 };
 
-export const shopProducts = productData as ShopProduct[];
+export const shopProducts = productData as unknown as ShopProduct[];
 
 export function getProduct(asin: string) {
   return shopProducts.find((product) => product.parent_asin === asin);

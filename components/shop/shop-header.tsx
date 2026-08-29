@@ -82,6 +82,12 @@ export function ShopHeader() {
         className="flex h-10 items-center gap-1 overflow-x-auto bg-[#232f3e] px-3 text-sm sm:px-5"
       >
         <Link
+          href="/"
+          className="shrink-0 rounded-sm border border-[#ff9900]/60 bg-[#ff9900]/10 px-2 py-1 font-bold text-[#ffd38f] hover:border-[#ff9900]"
+        >
+          PickMe Lab
+        </Link>
+        <Link
           href="/shop"
           className="flex shrink-0 items-center gap-1 rounded-sm border border-transparent px-2 py-1 font-bold hover:border-white"
         >
