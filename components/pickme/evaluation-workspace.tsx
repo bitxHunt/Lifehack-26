@@ -12,7 +12,9 @@ import {
   ExternalLink,
   FlaskConical,
   Gauge,
+  History,
   Lightbulb,
+  ListChecks,
   LoaderCircle,
   PencilLine,
   Play,
@@ -20,8 +22,11 @@ import {
   Search,
   Sparkles,
   Target,
+  Trash2,
   Trophy,
   WandSparkles,
+  BrainCircuit,
+  Database,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -44,6 +49,37 @@ type ProductOption = {
 type View = "adversarial" | "discovery" | "fixes";
 type StressCategory = PickMeEvaluation["adversarialTests"][number]["category"];
 type StressFilter = "all" | StressCategory;
+type EvaluationStage = "validate" | "retrieve" | "shortlist" | "evaluate" | "score";
+type EvaluationProgress = {
+  type: "progress";
+  stage: EvaluationStage;
+  status: "active" | "complete";
+  title: string;
+  detail: string;
+};
+type StoredRun = {
+  id: string;
+  runNumber: number;
+  createdAt: string;
+  productUrl: string;
+  intent: string;
+  draft: ProductDraft;
+  result: PickMeEvaluation;
+  progress: EvaluationProgress[];
+};
+
+const evaluationStages: Array<{
+  key: EvaluationStage;
+  label: string;
+  pending: string;
+  icon: typeof Target;
+}> = [
+  { key: "validate", label: "Understand request", pending: "Waiting to inspect the URL and buyer intent", icon: Target },
+  { key: "retrieve", label: "Search full catalog", pending: "Waiting to search Amazon Fashion metadata", icon: Database },
+  { key: "shortlist", label: "Build shortlist", pending: "Waiting to select distinct evidence candidates", icon: ListChecks },
+  { key: "evaluate", label: "Evaluate with OpenAI", pending: "Waiting to rank and run 30 message tests", icon: BrainCircuit },
+  { key: "score", label: "Validate output", pending: "Waiting to verify ranks and calculate scores", icon: Gauge },
+];
 
 const stressCategories: Array<{ key: StressFilter; label: string }> = [
   { key: "all", label: "All 30" },
@@ -275,6 +311,8 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
   const [activeView, setActiveView] = useState<View>("adversarial");
   const [stressFilter, setStressFilter] = useState<StressFilter>("all");
   const [running, setRunning] = useState(false);
+  const [progressEvents, setProgressEvents] = useState<EvaluationProgress[]>([]);
+  const [runHistory, setRunHistory] = useState<StoredRun[]>([]);
   const [savingMetadata, setSavingMetadata] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -289,23 +327,30 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const saved = window.localStorage.getItem("pickme-workspace-v1");
-      if (!saved) {
-        setStorageReady(true);
-        return;
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as {
+            productUrl?: string;
+            intent?: string;
+            drafts?: Record<string, ProductDraft>;
+            runNumber?: number;
+          };
+          if (parsed.productUrl) setProductUrl(parsed.productUrl);
+          if (parsed.intent) setIntent(parsed.intent);
+          if (parsed.drafts) setDrafts((current) => ({ ...current, ...parsed.drafts }));
+          if (parsed.runNumber) setRunNumber(parsed.runNumber);
+        } catch {
+          window.localStorage.removeItem("pickme-workspace-v1");
+        }
       }
-      try {
-        const parsed = JSON.parse(saved) as {
-          productUrl?: string;
-          intent?: string;
-          drafts?: Record<string, ProductDraft>;
-          runNumber?: number;
-        };
-        if (parsed.productUrl) setProductUrl(parsed.productUrl);
-        if (parsed.intent) setIntent(parsed.intent);
-        if (parsed.drafts) setDrafts((current) => ({ ...current, ...parsed.drafts }));
-        if (parsed.runNumber) setRunNumber(parsed.runNumber);
-      } catch {
-        window.localStorage.removeItem("pickme-workspace-v1");
+      const savedHistory = window.localStorage.getItem("pickme-run-history-v1");
+      if (savedHistory) {
+        try {
+          const parsedHistory = JSON.parse(savedHistory) as StoredRun[];
+          if (Array.isArray(parsedHistory)) setRunHistory(parsedHistory);
+        } catch {
+          window.localStorage.removeItem("pickme-run-history-v1");
+        }
       }
       setStorageReady(true);
     }, 0);
@@ -319,6 +364,20 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
       JSON.stringify({ productUrl, intent, drafts, runNumber }),
     );
   }, [drafts, intent, productUrl, runNumber, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    try {
+      window.localStorage.setItem("pickme-run-history-v1", JSON.stringify(runHistory));
+    } catch {
+      const recentRuns = runHistory.slice(0, 20);
+      try {
+        window.localStorage.setItem("pickme-run-history-v1", JSON.stringify(recentRuns));
+      } catch {
+        window.localStorage.removeItem("pickme-run-history-v1");
+      }
+    }
+  }, [runHistory, storageReady]);
 
   const targetRank = useMemo(
     () => result?.targetRank,
@@ -361,20 +420,71 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
 
     setRunning(true);
     setError(null);
+    setResult(null);
+    setProgressEvents([]);
     try {
       const response = await fetch("/api/evaluate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/x-ndjson",
+        },
         body: JSON.stringify({
           productUrl,
           intent,
           productDraft: drafts[asin] ?? product.draft,
         }),
       });
-      const payload = (await response.json()) as PickMeEvaluation & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Evaluation failed.");
-      setResult(payload);
-      setRunNumber((current) => current + 1);
+      if (!response.body) throw new Error("The evaluation stream could not be opened.");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalResult: PickMeEvaluation | null = null;
+      const collectedProgress: EvaluationProgress[] = [];
+
+      const processLine = (line: string) => {
+        if (!line.trim()) return;
+        const event = JSON.parse(line) as
+          | EvaluationProgress
+          | { type: "result"; result: PickMeEvaluation }
+          | { type: "error"; error: string };
+        if (event.type === "progress") {
+          const existingIndex = collectedProgress.findIndex((item) => item.stage === event.stage);
+          if (existingIndex >= 0) collectedProgress[existingIndex] = event;
+          else collectedProgress.push(event);
+          setProgressEvents([...collectedProgress]);
+        }
+        if (event.type === "result") finalResult = event.result;
+        if (event.type === "error") throw new Error(event.error || "Evaluation failed.");
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) processLine(line);
+        if (done) break;
+      }
+      if (buffer.trim()) processLine(buffer);
+      if (!finalResult) throw new Error("The evaluation finished without a result.");
+
+      const completedResult = finalResult as PickMeEvaluation;
+      const nextRunNumber = runNumber + 1;
+      const run: StoredRun = {
+        id: window.crypto.randomUUID(),
+        runNumber: nextRunNumber,
+        createdAt: new Date().toISOString(),
+        productUrl,
+        intent,
+        draft: drafts[asin] ?? product.draft,
+        result: completedResult,
+        progress: [...collectedProgress],
+      };
+      setResult(completedResult);
+      setRunNumber(nextRunNumber);
+      setRunHistory((current) => [run, ...current]);
       setActiveView("adversarial");
       setStressFilter("all");
       window.setTimeout(
@@ -386,6 +496,26 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
     } finally {
       setRunning(false);
     }
+  }
+
+  function openPastRun(run: StoredRun) {
+    setProductUrl(run.productUrl);
+    setIntent(run.intent);
+    setDrafts((current) => ({ ...current, [run.draft.parent_asin]: run.draft }));
+    setResult(run.result);
+    setProgressEvents(run.progress);
+    setRunNumber(run.runNumber);
+    setActiveView("adversarial");
+    setStressFilter("all");
+    setError(null);
+    window.setTimeout(
+      () => document.getElementById("evaluation-results")?.scrollIntoView({ behavior: "smooth" }),
+      50,
+    );
+  }
+
+  function deletePastRun(runId: string) {
+    setRunHistory((current) => current.filter((run) => run.id !== runId));
   }
 
   function updateDraft(draft: ProductDraft) {
@@ -601,16 +731,16 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
                 <button
                   type="button"
                   onClick={runEvaluation}
-                  disabled={running}
+                  disabled={running || savingMetadata}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-4 text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-65 sm:w-fit"
                 >
-                  {running ? (
+                  {running || savingMetadata ? (
                     <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />
                   ) : (
                     <Play className="size-4 fill-current" aria-hidden="true" />
                   )}
-                  {running ? "Running the AI evaluation…" : "Run PickMe evaluation"}
-                  {!running ? <ArrowRight className="size-4" aria-hidden="true" /> : null}
+                  {running || savingMetadata ? "Running the AI evaluation…" : "Run PickMe evaluation"}
+                  {!running && !savingMetadata ? <ArrowRight className="size-4" aria-hidden="true" /> : null}
                 </button>
               </div>
             </div>
@@ -646,21 +776,85 @@ export function EvaluationWorkspace({ products }: { products: ProductOption[] })
           </div>
         </section>
 
-        {running ? (
-          <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8" aria-live="polite">
-            <div className="rounded-2xl border border-blue-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-full bg-blue-50 text-blue-600">
-                  <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />
-                </span>
-                <div>
-                  <p className="font-bold text-slate-950">Searching Amazon Fashion, then evaluating the shortlist</p>
-                  <p className="text-sm text-slate-500">Retrieving candidates from the full metadata corpus before OpenAI ranks and stress-tests them.</p>
+        {runHistory.length > 0 ? (
+          <section className="mx-auto max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-10 place-items-center rounded-xl bg-slate-100 text-slate-600">
+                    <History className="size-5" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <h2 className="font-bold text-slate-950">Run history on this device</h2>
+                    <p className="text-xs text-slate-500">Open any past input, result, and evaluation path. Nothing is uploaded for history storage.</p>
+                  </div>
                 </div>
+                <button type="button" onClick={() => setRunHistory([])} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-rose-50 hover:text-rose-700">
+                  <Trash2 className="size-3.5" aria-hidden="true" /> Clear history
+                </button>
               </div>
-              <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-blue-500 to-violet-500" />
+              <div className="mt-5 grid max-h-80 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+                {runHistory.map((run) => (
+                  <article key={run.id} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Run {run.runNumber} · {new Date(run.createdAt).toLocaleString()}</p>
+                        <p className="mt-2 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{run.intent}</p>
+                      </div>
+                      <button type="button" onClick={() => deletePastRun(run.id)} aria-label={`Delete run ${run.runNumber}`} className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                        <Trash2 className="size-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 text-xs font-bold">
+                      <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{run.result.overallScore}/100</span>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">Target #{run.result.targetRank}</span>
+                      <span className="ml-auto text-slate-400">{run.result.model}</span>
+                    </div>
+                    <button type="button" onClick={() => openPastRun(run)} className="mt-4 w-full rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">
+                      Open this run
+                    </button>
+                  </article>
+                ))}
               </div>
+            </div>
+          </section>
+        ) : null}
+
+        {running || progressEvents.length > 0 ? (
+          <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8" aria-live="polite">
+            <div className="overflow-hidden rounded-2xl border border-blue-200 bg-white shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-slate-50/70 p-5 sm:p-6">
+                <div>
+                  <div className="flex items-center gap-2">
+                    {running ? <LoaderCircle className="size-4 animate-spin text-blue-600" aria-hidden="true" /> : <Check className="size-4 text-emerald-600" aria-hidden="true" />}
+                    <p className="font-bold text-slate-950">{running ? "Evaluation running live" : "Evaluation path completed"}</p>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-500">These are real processing checkpoints and evidence summaries, not a countdown or hidden chain-of-thought.</p>
+                </div>
+                <span className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
+                  {progressEvents.filter((event) => event.status === "complete").length} / {evaluationStages.length} stages complete
+                </span>
+              </div>
+              <ol className="grid gap-0 divide-y divide-slate-100 lg:grid-cols-5 lg:divide-x lg:divide-y-0">
+                {evaluationStages.map((stage, index) => {
+                  const event = progressEvents.find((candidate) => candidate.stage === stage.key);
+                  const StageIcon = stage.icon;
+                  const isActive = event?.status === "active";
+                  const isComplete = event?.status === "complete";
+                  return (
+                    <li key={stage.key} className={`relative p-5 ${isActive ? "bg-blue-50/60" : ""}`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`grid size-9 place-items-center rounded-lg ${isComplete ? "bg-emerald-50 text-emerald-700" : isActive ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-400"}`}>
+                          {isActive ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : isComplete ? <Check className="size-4" aria-hidden="true" /> : <StageIcon className="size-4" aria-hidden="true" />}
+                        </span>
+                        <span className="text-[10px] font-black text-slate-300">0{index + 1}</span>
+                      </div>
+                      <p className="mt-4 text-sm font-bold text-slate-900">{event?.title ?? stage.label}</p>
+                      <p className="mt-1.5 text-xs leading-5 text-slate-500">{event?.detail ?? stage.pending}</p>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
           </section>
         ) : null}

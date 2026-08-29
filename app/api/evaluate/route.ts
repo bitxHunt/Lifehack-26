@@ -8,6 +8,17 @@ import { getProduct, shopProducts } from "@/lib/shop-products";
 
 export const dynamic = "force-dynamic";
 
+type ProgressUpdate = {
+  type: "progress";
+  stage: "validate" | "retrieve" | "shortlist" | "evaluate" | "score";
+  status: "active" | "complete";
+  title: string;
+  detail: string;
+};
+
+type ProgressReporter = (update: ProgressUpdate) => void;
+const ignoreProgress: ProgressReporter = () => undefined;
+
 const rankingSchema = z.object({
   rank: z.number().int().min(1).max(5),
   asin: z.string(),
@@ -190,7 +201,17 @@ function resolvedTargetRank(
   return Math.max(6, Math.min(candidateCount, proposedRank));
 }
 
-export async function POST(request: Request) {
+async function evaluateRequest(
+  request: Request,
+  reportProgress: ProgressReporter = ignoreProgress,
+) {
+  reportProgress({
+    type: "progress",
+    stage: "validate",
+    status: "active",
+    title: "Reading the request",
+    detail: "Checking the shop URL, selected product, buyer intent, and draft metadata.",
+  });
   let body: unknown;
   try {
     body = await request.json();
@@ -212,6 +233,14 @@ export async function POST(request: Request) {
     return Response.json({ error: "Use one of the five Shopwise product page URLs." }, { status: 400 });
   }
 
+  reportProgress({
+    type: "progress",
+    stage: "validate",
+    status: "complete",
+    title: "Target product confirmed",
+    detail: `${asin} · ${product.title}`,
+  });
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return Response.json({
@@ -222,6 +251,13 @@ export async function POST(request: Request) {
 
   let retrieval;
   try {
+    reportProgress({
+      type: "progress",
+      stage: "retrieve",
+      status: "active",
+      title: "Searching Amazon Fashion",
+      detail: "Running weighted full-text retrieval across the complete indexed metadata corpus.",
+    });
     retrieval = await searchFullFashionCatalog(parsed.data.intent, 24);
   } catch (error) {
     console.error("Amazon Fashion catalog search failed", error);
@@ -231,13 +267,35 @@ export async function POST(request: Request) {
     }, { status: 503 });
   }
 
+  reportProgress({
+    type: "progress",
+    stage: "retrieve",
+    status: "complete",
+    title: "Full-catalog retrieval complete",
+    detail: `${retrieval.catalogSize.toLocaleString()} products searched using ${retrieval.searchTerms.length} intent terms.`,
+  });
+
   const model = process.env.OPENAI_EVAL_MODEL ?? "gpt-5.4-mini";
+  reportProgress({
+    type: "progress",
+    stage: "shortlist",
+    status: "active",
+    title: "Building the evidence shortlist",
+    detail: "Removing duplicate listings and force-including the submitted product for a fair comparison.",
+  });
   const targetMetadata = normalizeDraft(parsed.data.productDraft, product);
   const candidates = [
     targetMetadata,
     ...retrieval.candidates.filter((candidate) => candidate.asin !== asin).map(compactCandidate),
   ].slice(0, 25);
   const candidateByAsin = new Map(candidates.map((candidate) => [candidate.asin, candidate]));
+  reportProgress({
+    type: "progress",
+    stage: "shortlist",
+    status: "complete",
+    title: "Evidence shortlist ready",
+    detail: `${candidates.length} distinct candidates selected for evidence-based reranking.`,
+  });
 
   const systemPrompt = `You are PickMe, an ecommerce product-discovery evaluator.
 Your job is to judge one target product for a buyer intent against candidates retrieved from the complete Amazon Fashion metadata corpus.
@@ -263,6 +321,13 @@ Evaluation rules:
 
   try {
     const openai = new OpenAI({ apiKey });
+    reportProgress({
+      type: "progress",
+      stage: "evaluate",
+      status: "active",
+      title: "OpenAI is judging product fit",
+      detail: "Comparing evidence, ranking competitors, and evaluating 30 real-world message variations.",
+    });
     const response = await openai.responses.parse({
       model,
       store: false,
@@ -299,7 +364,22 @@ Evaluation rules:
       return Response.json({ error: "The model did not return a complete evaluation." }, { status: 502 });
     }
 
+    reportProgress({
+      type: "progress",
+      stage: "evaluate",
+      status: "complete",
+      title: "Model evaluation complete",
+      detail: "Received the leaderboard, 30 stress cases, discovery path, evidence scores, and metadata fixes.",
+    });
+
     const raw = response.output_parsed;
+    reportProgress({
+      type: "progress",
+      stage: "score",
+      status: "active",
+      title: "Validating ranks and scores",
+      detail: "Checking ASINs against the retrieved evidence and calculating the final score out of 100.",
+    });
     const leaderboard = normalizeRanking(raw.leaderboard, candidates);
     const targetRank = resolvedTargetRank(leaderboard, asin, raw.targetRank, candidates.length);
     const metrics = raw.metrics.map((metric) => ({
@@ -356,6 +436,14 @@ Evaluation rules:
       fixes: raw.fixes,
     };
 
+    reportProgress({
+      type: "progress",
+      stage: "score",
+      status: "complete",
+      title: "Evaluation ready",
+      detail: `Target ranked #${result.targetRank} with a PickMe score of ${result.overallScore}/100.`,
+    });
+
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("PickMe evaluation failed", error);
@@ -363,4 +451,51 @@ Evaluation rules:
       error: "The OpenAI evaluation could not be completed. Please wait a moment and try again.",
     }, { status: 502 });
   }
+}
+
+function streamEvaluation(request: Request) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (payload: unknown) => {
+        controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+      };
+
+      void (async () => {
+        try {
+          const response = await evaluateRequest(request, send);
+          const payload = await response.json();
+          if (response.ok) {
+            send({ type: "result", result: payload });
+          } else {
+            send({ type: "error", ...payload, status: response.status });
+          }
+        } catch (error) {
+          console.error("PickMe evaluation stream failed", error);
+          send({
+            type: "error",
+            error: "The evaluation stream stopped unexpectedly. Please try again.",
+            status: 500,
+          });
+        } finally {
+          controller.close();
+        }
+      })();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+export async function POST(request: Request) {
+  if (request.headers.get("accept")?.includes("application/x-ndjson")) {
+    return streamEvaluation(request);
+  }
+  return evaluateRequest(request);
 }
