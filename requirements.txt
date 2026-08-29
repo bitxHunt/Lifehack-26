@@ -1,0 +1,2 @@
+# AgentShelf runs on the Python standard library alone.
+# This file exists so Render detects the repo as a Python service.
