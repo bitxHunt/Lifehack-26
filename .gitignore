@@ -1,2 +1,13 @@
-__pycache__/
-*.pyc
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+.DS_Store
+.env
+.env*.local
+
+/lib/generated/prisma
+
+AGENTS.md
+CLAUDE.md
