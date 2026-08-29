@@ -5,6 +5,7 @@ import { useState } from "react";
 import ClaimCheck from "./ClaimCheck";
 import CoverageMap from "./CoverageMap";
 import FixLoop from "./FixLoop";
+import ListingCreator from "./ListingCreator";
 import Scoreboard from "./Scoreboard";
 import type { Coverage, LoopStep, QueryView, UnbackedClaim } from "@/lib/types";
 
@@ -13,6 +14,7 @@ const TABS = [
   { id: "coverage", label: "Question coverage" },
   { id: "loop", label: "Fix & re-run" },
   { id: "trust", label: "Claim check" },
+  { id: "listing", label: "Create listing" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -57,6 +59,10 @@ export default function Dashboard({ queries, views, coverage, loopHistory, flags
 
         <section className={`panel${tab === "trust" ? " is-active" : ""}`}>
           <ClaimCheck flags={flags} />
+        </section>
+
+        <section className={`panel${tab === "listing" ? " is-active" : ""}`}>
+          <ListingCreator />
         </section>
       </main>
     </>

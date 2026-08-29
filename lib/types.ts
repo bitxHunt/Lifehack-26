@@ -201,3 +201,39 @@ export interface QueryView {
   ranking: QueryRun;
   explanation: LossExplanation;
 }
+
+// --- Create-a-listing workflow ----------------------------------------------
+
+/** Facts the seller knows are true, keyed by facet -- becomes a draft's `truth`. */
+export type FacetFacts = Partial<Record<FacetId, string>>;
+
+export interface ListingDraftRequest {
+  name: string;
+  brand?: string;
+  price_sgd?: number;
+  notes?: string;
+  facts?: FacetFacts;
+  photo_data_url?: string;
+}
+
+export interface ListingDraftResponse {
+  content: string[];
+  source: "llm" | "template";
+}
+
+export interface ListingScoreRequest {
+  name: string;
+  brand?: string;
+  price_sgd?: number;
+  content: string[];
+  facts?: FacetFacts;
+}
+
+export interface ListingScoreResponse {
+  queries: { id: string; text: string }[];
+  views: Record<string, QueryView>;
+  coverage: Coverage;
+  shelf_score: number;
+  win_rate: number;
+  recommend_rate: number;
+}

@@ -105,8 +105,8 @@ export function scoreProduct(product: Product, query: Query, patches?: Patches):
 }
 
 /** Rank the whole shelf against one shopper question. */
-export function runQuery(query: Query, patches?: Patches): QueryRun {
-  const scored = PRODUCTS.map((p) => scoreProduct(p, query, patches));
+export function runQuery(query: Query, patches?: Patches, products: Product[] = PRODUCTS): QueryRun {
+  const scored = products.map((p) => scoreProduct(p, query, patches));
   scored.sort((a, b) => b.score - a.score || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
   const results: RankedProduct[] = scored.map((result, index) => {
@@ -140,12 +140,16 @@ export function explainLoss(
   query: Query,
   patches?: Patches,
   productId: string = BRAND_PRODUCT_ID,
+  products: Product[] = PRODUCTS,
 ): LossExplanation {
-  const ranked = runQuery(query, patches);
+  const ranked = runQuery(query, patches, products);
   const ours = ranked.results.find((r) => r.product_id === productId)!;
   const winner = ranked.results[0];
 
-  const product = getProduct(productId);
+  const product = products.find((p) => p.id === productId);
+  if (!product) {
+    throw new Error(`Unknown product: ${productId}`);
+  }
   const ourPoints = new Map(ours.breakdown.map((b) => [b.facet, b]));
   const winnerPoints = new Map(winner.breakdown.map((b) => [b.facet, b]));
 
@@ -227,8 +231,15 @@ export function unbackedClaims(): UnbackedClaim[] {
 // --- Coverage map ----------------------------------------------------------
 
 /** Which shopper questions can this page answer at all? */
-export function coverage(productId: string = BRAND_PRODUCT_ID, patches?: Patches): Coverage {
-  const product = getProduct(productId);
+export function coverage(
+  productId: string = BRAND_PRODUCT_ID,
+  patches?: Patches,
+  products: Product[] = PRODUCTS,
+): Coverage {
+  const product = products.find((p) => p.id === productId);
+  if (!product) {
+    throw new Error(`Unknown product: ${productId}`);
+  }
   const reading = readPage(product, patches);
 
   const rows: CoverageRow[] = QUESTIONS.map(({ question, facets }) => {
@@ -304,5 +315,29 @@ export function shelfReport(patches?: Patches, productId: string = BRAND_PRODUCT
     recommend_rate: pyRound((recommended / total) * 100),
     queries: ours,
     share_of_voice: shareOfVoice,
+  };
+}
+
+// --- Scoring a brand-new draft against the existing shelf ------------------
+
+/** The shoes a freshly-drafted listing has to compete against. */
+export function competitorProducts(): Product[] {
+  return PRODUCTS.filter((p) => !p.is_ours);
+}
+
+/** Same three headline numbers as `shelfReport`, for a product that isn't in the catalog. */
+export function customShelfSummary(product: Product, competitors: Product[], patches?: Patches) {
+  const products = [product, ...competitors];
+  const runs = QUERIES.map((q) => runQuery(q, patches, products));
+  const ours = runs.map((run) => run.results.find((r) => r.product_id === product.id)!);
+
+  const total = ours.length;
+  const wins = ours.filter((o) => o.rank === 1).length;
+  const recommended = ours.filter((o) => o.recommended).length;
+
+  return {
+    shelf_score: pyRound(ours.reduce((sum, o) => sum + o.score, 0) / total),
+    win_rate: pyRound((wins / total) * 100),
+    recommend_rate: pyRound((recommended / total) * 100),
   };
 }
