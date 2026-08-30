@@ -4,7 +4,7 @@ import { getProductPath, shopProducts } from "@/lib/shop-products";
 
 const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL ??
-  "https://shopwise-fashion-edit.z3e0.chatgpt.site";
+  "http://pickme-lifehack.vercel.app";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [

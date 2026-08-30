@@ -17,6 +17,9 @@ export type RankingEntry = {
   fitScore: number;
   reason: string;
   productUrl: string;
+  amazonUrl: string;
+  rating: number;
+  ratingCount: number;
 };
 
 export type CompetitorEffect = {
@@ -50,8 +53,16 @@ export type AdversarialTest = {
     | "ambiguous"
     | "context_shift";
   label: string;
+  dialogueStage:
+    | "initial_vague"
+    | "clarification_reply"
+    | "constraint_reveal"
+    | "preference_shift"
+    | "purchase_refusal";
   prompt: string;
   stress: string;
+  revealedInformation: string[];
+  withheldInformation: string[];
   targetRank: number;
   verdict: "pass" | "watch" | "fail";
   topPickAsin: string;
@@ -61,10 +72,24 @@ export type AdversarialTest = {
 
 export type DiscoveryStep = {
   step: number;
+  phase:
+    | "clarify"
+    | "search"
+    | "inspect"
+    | "compare"
+    | "verify"
+    | "recommend";
   title: string;
-  action: string;
-  signal: string;
-  targetRank: number;
+  actionType: "ask_shopper" | "interact_with_env";
+  actionContent: string;
+  question: string;
+  knownRequirements: string[];
+  missingRequirements: string[];
+  inputs: string[];
+  observations: string[];
+  decision: string;
+  rankBefore: number;
+  rankAfter: number;
   inTopFive: boolean;
 };
 
@@ -78,6 +103,10 @@ export type MetadataFix = {
 
 export type PickMeEvaluation = {
   model: string;
+  models: {
+    discovery: { name: string; reasoningEffort: string };
+    adversarial: { name: string; reasoningEffort: string };
+  };
   targetAsin: string;
   targetTitle: string;
   targetRank: number;
@@ -110,7 +139,7 @@ export const intentPresets: IntentPreset[] = [
     shortLabel: "Beach sandals",
     asin: "B0811M2JG9",
     intent:
-      "A 38-year-old beach lover seeking comfortable, lightweight sandals with distinctive marine artwork under $35.",
+      "Need comfortable sandals for a beach holiday, preferably under $35.",
   },
   {
     id: "maya",
@@ -118,7 +147,7 @@ export const intentPresets: IntentPreset[] = [
     shortLabel: "Compression sleeves",
     asin: "B07SB2892S",
     intent:
-      "A 31-year-old nurse seeking affordable, breathable compression sleeves to reduce leg fatigue during long shifts.",
+      "What can I wear to help with tired legs during long nursing shifts?",
   },
   {
     id: "kayla",
@@ -126,7 +155,7 @@ export const intentPresets: IntentPreset[] = [
     shortLabel: "Budget sweatshirt",
     asin: "B08FMLXY1Z",
     intent:
-      "A 20-year-old student seeking a colorful, comfortable sweatshirt with pockets at a low price.",
+      "I need a cheap comfy sweatshirt with pockets for campus.",
   },
   {
     id: "dan",
@@ -134,7 +163,7 @@ export const intentPresets: IntentPreset[] = [
     shortLabel: "Collectible T-shirt",
     asin: "B079J6WGYY",
     intent:
-      "A 52-year-old music and vintage Volkswagen fan seeking a collectible Jerry Garcia tribute T-shirt.",
+      "Need a vintage-looking T-shirt for a music fan, preferably not too expensive.",
   },
   {
     id: "elena",
@@ -142,7 +171,7 @@ export const intentPresets: IntentPreset[] = [
     shortLabel: "Work pumps",
     asin: "B015WXZSZ6",
     intent:
-      "A 35-year-old professional seeking versatile, moderately elevated pumps for work and formal occasions.",
+      "I need comfortable heels that work for the office and formal events.",
   },
 ];
 
