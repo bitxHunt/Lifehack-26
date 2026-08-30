@@ -14,8 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ??
-      "https://shopwise-fashion-edit.z3e0.chatgpt.site",
+    process.env.NEXT_PUBLIC_SITE_URL ?? "http://pickme-lifehack.vercel.app",
   ),
   title: {
     default: "PickMe — AI Product Visibility Lab",

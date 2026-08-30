@@ -12,7 +12,7 @@ export function GET() {
       schema_version: "1.0",
       name: "Shopwise Fashion Edit",
       description:
-        "A fictional, AI-accessible ecommerce catalog containing five complete Amazon Fashion metadata records.",
+        "An AI-accessible demo storefront derived from five complete Amazon Fashion metadata records.",
       entrypoint: "/shop",
       path_editor: "/shop/journey",
       product_route_pattern: "/shop/dp/{parent_asin}",
