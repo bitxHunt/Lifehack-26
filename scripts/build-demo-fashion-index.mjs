@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const sourcePath = resolve(process.argv[2] ?? "data/index/amazon-fashion.sqlite");
 const outputPath = resolve(process.argv[3] ?? "data/catalog/amazon-fashion-demo.sqlite");
-const targetSize = Number(process.argv[4] ?? 5000);
+const targetSize = Number(process.argv[4] ?? 10000);
 
 if (!existsSync(sourcePath)) {
   throw new Error(`Full Amazon Fashion index was not found at ${sourcePath}`);
